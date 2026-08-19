@@ -1,8 +1,10 @@
 import json
 import sqlite3
+from bs4 import BeautifulSoup
 import google.generativeai as genai
 import pandas as pd
 from PIL import Image
+import requests
 import streamlit as st
 
 # --- Inizializzazione Session State per i Campi del Form ---
@@ -77,23 +79,20 @@ with tab_dispensa:
     url_input = st.text_input("Oppure incolla il link della scheda prodotto")
 
     if st.button("Estrai Valori") and api_key and (uploaded_img or url_input):
-      with st.spinner("Estrazione dati nutrizionali in corso..."):
+      with st.spinner("Lettura dati ed estrazione in corso con Gemini..."):
         try:
           genai.configure(api_key=api_key)
 
-          # Lista modelli con Gemini Flash in ordine di preferenza
+          # Lista con gemini-3.7-flash come prioritario
           candidate_models = [
-              "gemini-2.0-flash",
-              "gemini-2.0-flash-exp",
-              "gemini-1.5-flash",
               "gemini-3.7-flash",
-              "gemini-1.5-flash-8b",
-              "gemini-1.5-pro",
+              "gemini-2.0-flash",
+              "gemini-1.5-flash",
           ]
 
           prompt = """
-                    Estrai i valori nutrizionali medi per 100g dall'input fornito.
-                    Rispondi SOLO ed ESCLUSIVAMENTE con un JSON valido con questa struttura esatta (usa numeri decimali con il punto, 0 se assenti):
+                    Estrai con la massima precisione i valori nutrizionali medi per 100g dal contenuto fornito.
+                    Rispondi SOLO ed ESCLUSIVAMENTE con un JSON valido con questa struttura esatta (numeri decimali con punto, zero se assenti):
                     {
                       "nome": "string",
                       "kj": 0.0,
@@ -108,11 +107,24 @@ with tab_dispensa:
                     }
                     """
 
-          content = (
-              [prompt, Image.open(uploaded_img)]
-              if uploaded_img
-              else [prompt, f"Link o testo prodotto: {url_input}"]
-          )
+          if uploaded_img:
+            content = [prompt, Image.open(uploaded_img)]
+          else:
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                )
+            }
+            res = requests.get(url_input, headers=headers, timeout=10)
+            soup = BeautifulSoup(res.text, "html.parser")
+            for s in soup(["script", "style", "nav", "footer"]):
+              s.decompose()
+            page_text = " ".join(soup.stripped_strings)[:12000]
+            content = [
+                prompt,
+                f"Testo estratto dalla pagina del prodotto:\n{page_text}",
+            ]
+
           response = None
           last_err = None
 
@@ -134,7 +146,7 @@ with tab_dispensa:
           )
           extracted = json.loads(raw_text)
 
-          # Aggiorna lo stato con i valori estratti
+          # Assegnazione valori ai campi
           st.session_state["nome"] = str(extracted.get("nome", ""))
           st.session_state["kj"] = float(extracted.get("kj", 0.0))
           st.session_state["kcal"] = float(extracted.get("kcal", 0.0))
@@ -148,7 +160,7 @@ with tab_dispensa:
           st.session_state["proteine"] = float(extracted.get("proteine", 0.0))
           st.session_state["sale"] = float(extracted.get("sale", 0.0))
 
-          st.success("Dati estratti! Verifica i campi a destra e salva.")
+          st.success("Dati estratti con successo!")
           st.rerun()
         except Exception as e:
           st.error(f"Errore durante l'estrazione: {e}")
