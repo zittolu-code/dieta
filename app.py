@@ -80,16 +80,20 @@ with tab_dispensa:
       with st.spinner("Estrazione dati nutrizionali in corso..."):
         try:
           genai.configure(api_key=api_key)
+
+          # Lista modelli con Gemini Flash in ordine di preferenza
           candidate_models = [
-              "gemini-1.5-flash",
               "gemini-2.0-flash",
+              "gemini-2.0-flash-exp",
+              "gemini-1.5-flash",
+              "gemini-3.7-flash",
+              "gemini-1.5-flash-8b",
               "gemini-1.5-pro",
-              "gemini-pro",
           ]
 
           prompt = """
                     Estrai i valori nutrizionali medi per 100g dall'input fornito.
-                    Rispondi SOLO ed ESCLUSIVAMENTE con un JSON valido con questa struttura (numeri decimali con punto, zero se assenti):
+                    Rispondi SOLO ed ESCLUSIVAMENTE con un JSON valido con questa struttura esatta (usa numeri decimali con il punto, 0 se assenti):
                     {
                       "nome": "string",
                       "kj": 0.0,
@@ -125,7 +129,9 @@ with tab_dispensa:
           if not response:
             raise last_err
 
-          raw_text = response.text.replace("```json", "").replace("```", "").strip()
+          raw_text = (
+              response.text.replace("```json", "").replace("```", "").strip()
+          )
           extracted = json.loads(raw_text)
 
           # Aggiorna lo stato con i valori estratti
