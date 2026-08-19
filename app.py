@@ -7,25 +7,6 @@ from PIL import Image
 import requests
 import streamlit as st
 
-# --- Inizializzazione Session State per i Campi del Form ---
-default_nutri_values = {
-    "nome": "",
-    "categoria": "COLAZIONE",
-    "kj": 0.0,
-    "kcal": 0.0,
-    "grassi": 0.0,
-    "saturi": 0.0,
-    "carboidrati": 0.0,
-    "zuccheri": 0.0,
-    "fibre": 0.0,
-    "proteine": 0.0,
-    "sale": 0.0,
-}
-
-for key, val in default_nutri_values.items():
-  if key not in st.session_state:
-    st.session_state[key] = val
-
 # --- Configurazione Database Locale ---
 conn = sqlite3.connect("nutrition_planner.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -53,6 +34,24 @@ conn.commit()
 st.set_page_config(page_title="Diet Planner", layout="wide")
 st.title("🥗 Piano Nutrizionale & Dispensa Smart")
 
+# Inizializzazione buffer dati estratti/correnti
+default_values = {
+    "nome": "",
+    "categoria": "COLAZIONE",
+    "kj": 0.0,
+    "kcal": 0.0,
+    "grassi": 0.0,
+    "saturi": 0.0,
+    "carboidrati": 0.0,
+    "zuccheri": 0.0,
+    "fibre": 0.0,
+    "proteine": 0.0,
+    "sale": 0.0,
+}
+
+if "food_buffer" not in st.session_state:
+  st.session_state["food_buffer"] = default_values.copy()
+
 api_key_secret = st.secrets.get("GEMINI_API_KEY", "")
 
 tab_dispensa, tab_piano, tab_obiettivi = st.tabs(
@@ -79,11 +78,10 @@ with tab_dispensa:
     url_input = st.text_input("Oppure incolla il link della scheda prodotto")
 
     if st.button("Estrai Valori") and api_key and (uploaded_img or url_input):
-      with st.spinner("Lettura dati ed estrazione in corso con Gemini..."):
+      with st.spinner("Lettura dati ed estrazione con Gemini..."):
         try:
           genai.configure(api_key=api_key)
 
-          # Lista con gemini-3.7-flash come prioritario
           candidate_models = [
               "gemini-3.7-flash",
               "gemini-2.0-flash",
@@ -91,8 +89,8 @@ with tab_dispensa:
           ]
 
           prompt = """
-                    Estrai con la massima precisione i valori nutrizionali medi per 100g dal contenuto fornito.
-                    Rispondi SOLO ed ESCLUSIVAMENTE con un JSON valido con questa struttura esatta (numeri decimali con punto, zero se assenti):
+                    Estrai con precisione i valori nutrizionali medi per 100g dall'input fornito.
+                    Rispondi SOLO ed ESCLUSIVAMENTE con un JSON valido con questa struttura (numeri decimali con punto, 0 se assenti):
                     {
                       "nome": "string",
                       "kj": 0.0,
@@ -146,21 +144,23 @@ with tab_dispensa:
           )
           extracted = json.loads(raw_text)
 
-          # Assegnazione valori ai campi
-          st.session_state["nome"] = str(extracted.get("nome", ""))
-          st.session_state["kj"] = float(extracted.get("kj", 0.0))
-          st.session_state["kcal"] = float(extracted.get("kcal", 0.0))
-          st.session_state["grassi"] = float(extracted.get("grassi", 0.0))
-          st.session_state["saturi"] = float(extracted.get("saturi", 0.0))
-          st.session_state["carboidrati"] = float(
-              extracted.get("carboidrati", 0.0)
-          )
-          st.session_state["zuccheri"] = float(extracted.get("zuccheri", 0.0))
-          st.session_state["fibre"] = float(extracted.get("fibre", 0.0))
-          st.session_state["proteine"] = float(extracted.get("proteine", 0.0))
-          st.session_state["sale"] = float(extracted.get("sale", 0.0))
-
-          st.success("Dati estratti con successo!")
+          # Salva nel buffer e forza il rerun pulito
+          st.session_state["food_buffer"] = {
+              "nome": str(extracted.get("nome", "")),
+              "categoria": st.session_state["food_buffer"].get(
+                  "categoria", "COLAZIONE"
+              ),
+              "kj": float(extracted.get("kj", 0.0)),
+              "kcal": float(extracted.get("kcal", 0.0)),
+              "grassi": float(extracted.get("grassi", 0.0)),
+              "saturi": float(extracted.get("saturi", 0.0)),
+              "carboidrati": float(extracted.get("carboidrati", 0.0)),
+              "zuccheri": float(extracted.get("zuccheri", 0.0)),
+              "fibre": float(extracted.get("fibre", 0.0)),
+              "proteine": float(extracted.get("proteine", 0.0)),
+              "sale": float(extracted.get("sale", 0.0)),
+          }
+          st.success("Dati estratti! Verifica i campi a destra e salva.")
           st.rerun()
         except Exception as e:
           st.error(f"Errore durante l'estrazione: {e}")
@@ -168,33 +168,49 @@ with tab_dispensa:
   with col_manual:
     st.markdown("**Verifica e Salva (Valori per 100 g)**")
 
-    nome = st.text_input("Nome Alimento", key="nome")
+    buff = st.session_state["food_buffer"]
+
+    nome = st.text_input("Nome Alimento", value=buff["nome"])
+    cat_options = ["COLAZIONE", "PRANZO", "SPUNTINO", "CENA"]
+    cat_index = (
+        cat_options.index(buff["categoria"])
+        if buff["categoria"] in cat_options
+        else 0
+    )
     categoria = st.selectbox(
-        "Categoria Dispensa",
-        ["COLAZIONE", "PRANZO", "SPUNTINO", "CENA"],
-        key="categoria",
+        "Categoria Dispensa", cat_options, index=cat_index
     )
 
     c1, c2 = st.columns(2)
-    kj = c1.number_input("Energia (kJ)", key="kj", step=0.1)
-    kcal = c2.number_input("Energia (kcal)", key="kcal", step=0.1)
+    kj = c1.number_input("Energia (kJ)", value=float(buff["kj"]), step=0.1)
+    kcal = c2.number_input("Energia (kcal)", value=float(buff["kcal"]), step=0.1)
 
     c3, c4 = st.columns(2)
-    grassi = c3.number_input("Grassi (g)", key="grassi", step=0.1)
+    grassi = c3.number_input(
+        "Grassi (g)", value=float(buff["grassi"]), step=0.1
+    )
     saturi = c4.number_input(
-        "di cui acidi grassi saturi (g)", key="saturi", step=0.1
+        "di cui acidi grassi saturi (g)",
+        value=float(buff["saturi"]),
+        step=0.1,
     )
 
     c5, c6 = st.columns(2)
     carboidrati = c5.number_input(
-        "Carboidrati (g)", key="carboidrati", step=0.1
+        "Carboidrati (g)", value=float(buff["carboidrati"]), step=0.1
     )
-    zuccheri = c6.number_input("di cui zuccheri (g)", key="zuccheri", step=0.1)
+    zuccheri = c6.number_input(
+        "di cui zuccheri (g)", value=float(buff["zuccheri"]), step=0.1
+    )
 
     c7, c8, c9 = st.columns(3)
-    fibre = c7.number_input("Fibra alimentare (g)", key="fibre", step=0.1)
-    proteine = c8.number_input("Proteine (g)", key="proteine", step=0.1)
-    sale = c9.number_input("Sale (g)", key="sale", step=0.01)
+    fibre = c7.number_input(
+        "Fibra alimentare (g)", value=float(buff["fibre"]), step=0.1
+    )
+    proteine = c8.number_input(
+        "Proteine (g)", value=float(buff["proteine"]), step=0.1
+    )
+    sale = c9.number_input("Sale (g)", value=float(buff["sale"]), step=0.01)
 
     btn_col1, btn_col2 = st.columns([1, 1])
 
@@ -202,7 +218,7 @@ with tab_dispensa:
       if st.button(
           "💾 Salva in Dispensa", type="primary", use_container_width=True
       ):
-        if nome:
+        if nome.strip():
           cursor.execute(
               """
                         INSERT INTO dispensa (nome, categoria, kj, kcal, grassi, saturi, carboidrati, zuccheri, fibre, proteine, sale)
@@ -223,17 +239,15 @@ with tab_dispensa:
               ),
           )
           conn.commit()
+          st.session_state["food_buffer"] = default_values.copy()
           st.success(f"{nome} salvato con successo!")
-          for k, v in default_nutri_values.items():
-            st.session_state[k] = v
           st.rerun()
         else:
           st.warning("Inserisci il nome dell'alimento prima di salvare.")
 
     with btn_col2:
       if st.button("🧹 Svuota Campi", use_container_width=True):
-        for k, v in default_nutri_values.items():
-          st.session_state[k] = v
+        st.session_state["food_buffer"] = default_values.copy()
         st.rerun()
 
   st.divider()
