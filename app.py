@@ -32,7 +32,6 @@ conn.commit()
 st.set_page_config(page_title="Diet Planner", layout="wide")
 st.title("🥗 Piano Nutrizionale & Dispensa Smart")
 
-# Recupero chiave da Secrets o da variabile d'ambiente
 api_key_secret = st.secrets.get("GEMINI_API_KEY", "")
 
 tab_dispensa, tab_piano, tab_obiettivi = st.tabs(
@@ -64,16 +63,18 @@ with tab_dispensa:
         try:
           genai.configure(api_key=api_key)
 
-          # Configurazione modello con output JSON forzato
-          model = genai.GenerativeModel(
-              model_name="gemini-1.5-flash-latest",
-              generation_config={"response_mime_type": "application/json"},
-          )
+          # Lista modelli da provare in ordine di preferenza
+          candidate_models = [
+              "gemini-1.5-flash",
+              "gemini-2.0-flash",
+              "gemini-3.7-flash",
+              "gemini-1.5-pro",
+              "gemini-pro",
+          ]
 
           prompt = """
-                    Estrai i valori nutrizionali medi per 100g dall'input fornito (immagine o link/testo).
-                    Compila solo i valori numerici usando il punto come decimale.
-                    Lo schema JSON deve essere:
+                    Estrai i valori nutrizionali medi per 100g dall'input fornito.
+                    Rispondi SOLO ed ESCLUSIVAMENTE con un JSON valido con questa struttura (numeri decimali con punto, zero se assenti):
                     {
                       "nome": "string",
                       "kj": 0.0,
@@ -87,15 +88,33 @@ with tab_dispensa:
                       "sale": 0.0
                     }
                     """
-          if uploaded_img:
-            img = Image.open(uploaded_img)
-            response = model.generate_content([prompt, img])
-          else:
-            response = model.generate_content(
-                [prompt, f"Link o testo prodotto: {url_input}"]
-            )
 
-          extracted_data = json.loads(response.text.strip())
+          content = (
+              [prompt, Image.open(uploaded_img)]
+              if uploaded_img
+              else [prompt, f"Link o testo prodotto: {url_input}"]
+          )
+
+          response = None
+          last_err = None
+
+          for model_name in candidate_models:
+            try:
+              model = genai.GenerativeModel(model_name)
+              response = model.generate_content(content)
+              if response and response.text:
+                break
+            except Exception as e:
+              last_err = e
+              continue
+
+          if not response:
+            raise last_err
+
+          raw_text = (
+              response.text.replace("```json", "").replace("```", "").strip()
+          )
+          extracted_data = json.loads(raw_text)
           st.success("Dati estratti con successo!")
         except Exception as e:
           st.error(f"Errore durante l'estrazione: {e}")
