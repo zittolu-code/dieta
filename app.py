@@ -14,8 +14,8 @@ cursor.execute(
     """
 CREATE TABLE IF NOT EXISTS dispensa (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT,
     categoria TEXT,
+    nome TEXT,
     quantita REAL DEFAULT 100.0,
     costo REAL DEFAULT 0.0,
     kj REAL,
@@ -177,25 +177,31 @@ with tab_dispensa:
     st.markdown("**Dati Prodotto e Valori Nutrizionali (per 100 g)**")
     buff = st.session_state["food_buffer"]
 
-    nome = st.text_input("Nome Alimento", value=buff["nome"])
+    # Riga 1: Nome Alimento + Sezione Confezione (Quantità e Costo)
+    r1_col1, r1_col2, r1_col3 = st.columns([2, 1, 1])
+    with r1_col1:
+      nome = st.text_input("Nome Alimento", value=buff["nome"])
+    with r1_col2:
+      quantita = st.number_input(
+          "📦 Confezione (g/pz)", value=float(buff["quantita"]), step=10.0
+      )
+    with r1_col3:
+      costo = st.number_input(
+          "💶 Prezzo (€)", value=float(buff["costo"]), step=0.1
+      )
 
-    c_cat, c_qty, c_cost = st.columns([2, 1, 1])
+    # Riga 2: Categoria Dispensa
     cat_options = ["COLAZIONE", "PRANZO", "SPUNTINO", "CENA"]
     cat_index = (
         cat_options.index(buff["categoria"])
         if buff["categoria"] in cat_options
         else 0
     )
-    categoria = c_cat.selectbox(
+    categoria = st.selectbox(
         "Categoria Dispensa", cat_options, index=cat_index
     )
-    quantita = c_qty.number_input(
-        "Quantità (g / pz)", value=float(buff["quantita"]), step=10.0
-    )
-    costo = c_cost.number_input(
-        "Costo (€)", value=float(buff["costo"]), step=0.1
-    )
 
+    # Valori Nutrizionali (per 100g)
     c1, c2 = st.columns(2)
     kj = c1.number_input("Energia (kJ)", value=float(buff["kj"]), step=0.1)
     kcal = c2.number_input("Energia (kcal)", value=float(buff["kcal"]), step=0.1)
@@ -236,12 +242,12 @@ with tab_dispensa:
           if is_editing:
             cursor.execute(
                 """
-                            UPDATE dispensa SET nome=?, categoria=?, quantita=?, costo=?, kj=?, kcal=?, grassi=?, saturi=?, carboidrati=?, zuccheri=?, fibre=?, proteine=?, sale=?
+                            UPDATE dispensa SET categoria=?, nome=?, quantita=?, costo=?, kj=?, kcal=?, grassi=?, saturi=?, carboidrati=?, zuccheri=?, fibre=?, proteine=?, sale=?
                             WHERE id=?
                             """,
                 (
-                    nome,
                     categoria,
+                    nome,
                     quantita,
                     costo,
                     kj,
@@ -259,12 +265,12 @@ with tab_dispensa:
           else:
             cursor.execute(
                 """
-                            INSERT INTO dispensa (nome, categoria, quantita, costo, kj, kcal, grassi, saturi, carboidrati, zuccheri, fibre, proteine, sale)
+                            INSERT INTO dispensa (categoria, nome, quantita, costo, kj, kcal, grassi, saturi, carboidrati, zuccheri, fibre, proteine, sale)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                 (
-                    nome,
                     categoria,
+                    nome,
                     quantita,
                     costo,
                     kj,
@@ -292,6 +298,7 @@ with tab_dispensa:
 
   st.divider()
 
+  # Tabella Dispensa (Categoria al primo posto)
   cat_filter = st.radio(
       "Filtra Dispensa:",
       ["TUTTE", "COLAZIONE", "PRANZO", "SPUNTINO", "CENA"],
@@ -308,10 +315,10 @@ with tab_dispensa:
   if df_dispensa.empty:
     st.info("Nessun alimento presente nella dispensa.")
   else:
-    header_cols = st.columns([2.5, 1.2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1.2])
+    header_cols = st.columns([1.2, 2.5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1.2])
     headers = [
-        "Nome",
         "Cat.",
+        "Nome",
         "Q.tà",
         "Costo",
         "Kcal",
@@ -328,9 +335,9 @@ with tab_dispensa:
       col.markdown(f"**{h}**")
 
     for _, row in df_dispensa.iterrows():
-      cols = st.columns([2.5, 1.2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1.2])
-      cols[0].write(row["nome"])
-      cols[1].write(row["categoria"])
+      cols = st.columns([1.2, 2.5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1.2])
+      cols[0].write(f"**{row['categoria']}**")
+      cols[1].write(row["nome"])
       cols[2].write(f"{row['quantita']:.0f}g")
       cols[3].write(f"€{row['costo']:.2f}")
       cols[4].write(f"{row['kcal']:.0f}")
@@ -363,7 +370,9 @@ with tab_dispensa:
         st.rerun()
 
       if action_c2.button("🗑️", key=f"del_{row['id']}"):
-        cursor.execute("DELETE FROM dispensa WHERE id = ?", (int(row["id"]),))
+        cursor.execute(
+            "DELETE FROM dispensa WHERE id = ?", (int(row["id"]),)
+        )
         conn.commit()
         if st.session_state["food_buffer"].get("edit_id") == row["id"]:
           st.session_state["food_buffer"] = default_values.copy()
