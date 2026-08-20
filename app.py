@@ -99,7 +99,7 @@ with tab_dispensa:
           genai.configure(api_key=api_key)
           candidate_models = [
               "gemini-2.0-flash",
-              "gemini-1.5-flash",
+              "gemini-3.7-flash",
               "gemini-1.5-pro",
           ]
 
