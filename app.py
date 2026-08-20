@@ -1,4 +1,5 @@
 import json
+import re
 import sqlite3
 from bs4 import BeautifulSoup
 import google.generativeai as genai
@@ -140,5 +141,7 @@ with tab_dispensa:
             ]
 
           response = model.generate_content(content)
-          raw_text = (
-              response.text.replace("```json", "").replace("
+
+          # Pulizia sicura del JSON senza rischio di errori di stringa
+          clean_json_str = re.sub(
+              r"^
