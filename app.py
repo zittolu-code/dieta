@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS dispensa (
 )
 """
 )
-# Migrazione dinamica colonne se la tabella esiste già
+# Migrazione colonne se la tabella esiste già
 cursor.execute("PRAGMA table_info(dispensa)")
 columns = [row[1] for row in cursor.fetchall()]
 if "quantita" not in columns:
@@ -89,7 +89,7 @@ with tab_dispensa:
         else st.text_input("Gemini API Key", type="password")
     )
     uploaded_img = st.file_uploader(
-        "Carica foto etichetta", type=["png", "jpg", "jpeg"]
+        "Carica foto etichetta / confezione", type=["png", "jpg", "jpeg"]
     )
     url_input = st.text_input("Oppure incolla il link della scheda prodotto")
 
@@ -99,15 +99,22 @@ with tab_dispensa:
           genai.configure(api_key=api_key)
           candidate_models = [
               "gemini-2.0-flash",
-              "gemini-3.7-flash",
+              "gemini-1.5-flash",
               "gemini-1.5-pro",
           ]
 
           prompt = """
-                    Estrai con precisione i valori nutrizionali medi per 100g dal contenuto fornito.
-                    Rispondi SOLO ed ESCLUSIVAMENTE con un JSON valido con questa struttura (numeri decimali con punto, 0 se assenti):
+                    Estrai con precisione:
+                    1. Nome del prodotto.
+                    2. Quantità/peso netto della confezione espresso in grammi (se espresso in kg moltiplica x1000, es: 2.5 kg = 2500; se assente metti 100).
+                    3. Costo/prezzo del prodotto in Euro (solo numero decimale con punto, es: 4.99; se assente metti 0.0).
+                    4. Valori nutrizionali medi per 100g.
+                    
+                    Rispondi SOLO ed ESCLUSIVAMENTE con un JSON valido con questa struttura esatta:
                     {
                       "nome": "string",
+                      "quantita": 0.0,
+                      "costo": 0.0,
                       "kj": 0.0,
                       "kcal": 0.0,
                       "grassi": 0.0,
@@ -165,10 +172,8 @@ with tab_dispensa:
               "categoria": st.session_state["food_buffer"].get(
                   "categoria", "COLAZIONE"
               ),
-              "quantita": float(
-                  st.session_state["food_buffer"].get("quantita", 100.0)
-              ),
-              "costo": float(st.session_state["food_buffer"].get("costo", 0.0)),
+              "quantita": float(extracted.get("quantita", 100.0)),
+              "costo": float(extracted.get("costo", 0.0)),
               "kj": float(extracted.get("kj", 0.0)),
               "kcal": float(extracted.get("kcal", 0.0)),
               "grassi": float(extracted.get("grassi", 0.0)),
@@ -179,7 +184,10 @@ with tab_dispensa:
               "proteine": float(extracted.get("proteine", 0.0)),
               "sale": float(extracted.get("sale", 0.0)),
           }
-          st.success("Dati estratti! Verifica i campi a destra e salva.")
+          st.success(
+              "Dati, quantità e prezzo estratti! Verifica i campi a destra e"
+              " salva."
+          )
           st.rerun()
         except Exception as e:
           st.error(f"Errore durante l'estrazione: {e}")
